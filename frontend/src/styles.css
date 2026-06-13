@@ -877,3 +877,374 @@ button:disabled {
     padding: 12px;
   }
 }
+
+/* ===================================================================== */
+/* Amazon-style header + identity + learning (v2)                        */
+/* ===================================================================== */
+
+body {
+  background: #eaeded;
+}
+
+/* ---- Amazon header ---- */
+.az-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.az-header-main {
+  background: #131921;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 14px;
+  flex-wrap: nowrap;
+}
+
+.az-logo {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.az-logo:hover {
+  border-color: #fff;
+}
+
+.az-logo-text {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.az-logo-now {
+  font-size: 13px;
+  color: var(--amzn-orange);
+  font-weight: 700;
+}
+
+.az-bolt {
+  font-size: 15px;
+}
+
+.az-location {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.az-location:hover {
+  border-color: #fff;
+}
+
+.az-location-pin {
+  font-size: 16px;
+}
+
+.az-location-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.az-location-deliver {
+  font-size: 11px;
+  color: #ccc;
+}
+
+.az-location-city {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.az-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: #fff;
+  border-radius: 6px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.az-search:focus-within {
+  box-shadow: 0 0 0 3px var(--amzn-orange);
+}
+
+.az-search-mode {
+  background: #e6e6e6;
+  color: #111;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 9px 10px;
+  white-space: nowrap;
+  border-right: 1px solid #cdcdcd;
+}
+
+.az-search-input {
+  flex: 1;
+  border: 0;
+  outline: 0;
+  padding: 9px 10px;
+  font-size: 14px;
+  color: #111;
+  min-width: 0;
+  cursor: default;
+}
+
+.az-search-btn {
+  background: var(--amzn-orange);
+  padding: 9px 14px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.az-account,
+.az-cart {
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.az-account:hover,
+.az-cart:hover {
+  border-color: #fff;
+}
+
+.az-account {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.1;
+}
+
+.az-account-hi {
+  font-size: 12px;
+  color: #ddd;
+}
+
+.az-account-sub {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.az-cart {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.az-cart-icon {
+  font-size: 20px;
+}
+
+.az-cart-count {
+  color: var(--amzn-orange);
+  font-weight: 700;
+}
+
+.az-subbar {
+  background: var(--amzn-navy-2);
+  color: #fff;
+  font-size: 13px;
+  padding: 7px 14px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.az-subbar-tag {
+  background: var(--amzn-orange);
+  color: #131921;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.az-subbar-dim {
+  color: #cbd5e1;
+}
+
+@media (max-width: 720px) {
+  .az-location,
+  .az-account {
+    display: none;
+  }
+}
+
+/* ---- Identity ---- */
+.identity {
+  background: #fff;
+  border: 1px solid #d5d9d9;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 14px 0;
+}
+
+.identity-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.identity-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--amzn-navy-2);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.identity-avatar.guest {
+  background: #d5d9d9;
+  color: #555;
+}
+
+.identity-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.identity-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.identity-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.link-btn {
+  background: none;
+  border: 0;
+  color: #007185;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.link-btn:hover {
+  color: #c7511f;
+  text-decoration: underline;
+}
+
+.identity-signin {
+  display: flex;
+  gap: 8px;
+}
+
+.identity-signin input {
+  padding: 8px 10px;
+  border: 1px solid #888c8c;
+  border-radius: 8px;
+  font-size: 14px;
+  width: 150px;
+}
+
+.signin-btn {
+  background: var(--amzn-orange);
+  border: 1px solid var(--amzn-orange-dark);
+  color: #111;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+/* ---- Learned strip ---- */
+.learned-strip {
+  background: #f0f7ff;
+  border: 1px solid #cfe3ff;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+
+.learned-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0b6e99;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.learned-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.learned-chip {
+  background: #fff;
+  border: 1px solid #cfe3ff;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.learned-count {
+  background: var(--amzn-navy-2);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 5px;
+}
+
+/* ---- Order confirmation learning note ---- */
+.confirm-learn {
+  background: #f0f7ff;
+  border: 1px solid #cfe3ff;
+  color: #0b6e99;
+  font-size: 12.5px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  text-align: left;
+}
+
+/* ---- Amazon-flavored buttons/cards tweaks ---- */
+.order-btn {
+  background: var(--amzn-orange);
+  border: 1px solid var(--amzn-orange-dark);
+  border-radius: 999px;
+}
+
+.cart,
+.clarify,
+.refine {
+  border-radius: 10px;
+  border-color: #d5d9d9;
+}
+
+.hero-input {
+  border-radius: 10px;
+  border-color: #d5d9d9;
+}

@@ -42,6 +42,9 @@ Output (mode = battle):
 
 import json
 import os
+import time
+from decimal import Decimal
+
 import boto3
 
 dynamodb = boto3.resource("dynamodb")
@@ -79,6 +82,56 @@ def get_user_preferences(user_id):
     return response.get("Item")
 
 
+def record_order(user_id, items, name=None):
+    """Append an order to the user's learned history.
+
+    Auto-creates the profile on first order. Keeps a running tally of how many
+    times each product and category has been bought so future carts can boost
+    the user's actual favorites — no hardcoded preferences needed.
+    """
+    table = dynamodb.Table(USER_PREFS_TABLE)
+    existing = table.get_item(Key={"user_id": user_id}).get("Item") or {}
+
+    item_counts = existing.get("item_counts") or {}
+    item_names = existing.get("item_names") or {}
+    category_counts = existing.get("category_counts") or {}
+
+    # category lookup from catalog
+    catalog_by_id = {p["product_id"]: p for p in get_full_catalog()}
+
+    for it in items:
+        pid = it.get("product_id") or it.get("name")
+        if not pid:
+            continue
+        item_counts[pid] = int(item_counts.get(pid, 0)) + 1
+        item_names[pid] = it.get("name", pid)
+        category = (catalog_by_id.get(pid) or {}).get("category", "general")
+        category_counts[category] = int(category_counts.get(category, 0)) + 1
+
+    profile = {
+        "user_id": user_id,
+        "name": name or existing.get("name") or user_id,
+        "order_count": int(existing.get("order_count", 0)) + 1,
+        "last_order_ts": int(time.time()),
+        "item_counts": item_counts,
+        "item_names": item_names,
+        "category_counts": category_counts,
+    }
+    # preserve any seeded demographic fields
+    for key in (
+        "favorite_brands",
+        "purchase_history_summary",
+        "household_context",
+        "city",
+        "language",
+    ):
+        if key in existing:
+            profile[key] = existing[key]
+
+    table.put_item(Item=profile)
+    return profile
+
+
 # ---------------------------------------------------------------------------
 # Prompt builders
 # ---------------------------------------------------------------------------
@@ -94,27 +147,72 @@ def build_catalog_block(catalog):
     return "\n".join(lines)
 
 
-def build_personalization_block(user_profile):
-    if not user_profile:
+def build_learned_history_block(user_profile):
+    """Turn the user's actual order tally into a prompt section."""
+    counts = user_profile.get("item_counts") or {}
+    names = user_profile.get("item_names") or {}
+    cats = user_profile.get("category_counts") or {}
+    if not counts:
         return ""
-    brands = user_profile.get("favorite_brands", {})
-    brand_lines = "\n".join(
-        [f"  - {category}: {brand}" for category, brand in brands.items()]
+
+    top_items = sorted(counts.items(), key=lambda kv: int(kv[1]), reverse=True)[:8]
+    item_lines = "\n".join(
+        f"  - {names.get(pid, pid)} (ordered {int(c)} time(s))" for pid, c in top_items
     )
-    history = user_profile.get("purchase_history_summary", "")
-    household = user_profile.get("household_context", "")
-    name = user_profile.get("name", "the user")
-    city = user_profile.get("city", "")
+    top_cats = sorted(cats.items(), key=lambda kv: int(kv[1]), reverse=True)[:5]
+    cat_line = ", ".join(f"{c} ({int(n)}x)" for c, n in top_cats)
 
     return f"""
 
-PERSONALIZATION CONTEXT — this user has known preferences:
-  Name: {name}
-  City: {city}
-  Favorite brands (when category matches):
-{brand_lines}
-  Purchase history: {history}
-  Household context: {household}
+LEARNED ORDER HISTORY (this user's past orders — use ONLY as a tie-breaker):
+{item_lines}
+Most-ordered categories: {cat_line}
+
+LEARNED-HISTORY RULES (READ CAREFULLY — relevance is an ABSOLUTE gate):
+1. SITUATION RELEVANCE COMES FIRST, ALWAYS. Build the cart from items that
+   genuinely solve the CURRENT situation. The learned list NEVER changes WHICH
+   kind of cart you build.
+2. A learned item may ONLY appear in the cart if it would already belong there
+   on its own merits for THIS situation. If the item does not fit the
+   situation's theme, DO NOT include it — no matter how many times it was bought.
+   - Power cut → do NOT add food/snacks/sweets just because they are favorites.
+   - Festival / Rakhi / Pooja → do NOT add naan, paneer, cola, namkeen, noodles.
+   - Health / fever → do NOT add any food, drinks, or non-medical items.
+   - Stationery / exam → do NOT add curries or sweets.
+3. Use learned history ONLY to choose BETWEEN two items that both already fit
+   the situation (e.g. prefer the user's usual cola brand among drinks), or to
+   add ONE clearly-relevant favorite.
+4. Only when an item is genuinely included AND it is on the learned list,
+   set "personalized": true and add "You order this often" to the reason.
+5. A short, correct cart (even 2-3 items) is far better than padding it with
+   irrelevant favorites. NEVER pad a cart to hit a size — relevance over count.
+"""
+
+
+def build_personalization_block(user_profile):
+    if not user_profile:
+        return ""
+
+    name = user_profile.get("name", "the user")
+    city = user_profile.get("city", "")
+    header = f"\n\nPERSONALIZATION CONTEXT — preferences for {name}"
+    if city:
+        header += f" ({city})"
+    header += ":"
+
+    parts = [header]
+
+    brands = user_profile.get("favorite_brands") or {}
+    if brands:
+        parts.append("  Favorite brands (when category matches):")
+        parts.extend([f"    - {category}: {brand}" for category, brand in brands.items()])
+
+    if user_profile.get("purchase_history_summary"):
+        parts.append("  Purchase summary: " + user_profile["purchase_history_summary"])
+    if user_profile.get("household_context"):
+        parts.append("  Household context: " + user_profile["household_context"])
+
+    brand_rules = """
 
 PERSONALIZATION RULES:
 - When picking items where the user has a known brand preference for that
@@ -123,8 +221,11 @@ PERSONALIZATION RULES:
   (e.g. "Maggi — your usual choice").
 - Use household context to tune the cart (e.g. elderly + BP medication →
   prioritize backup power for medical devices).
-- Do NOT mention preferences for items with no preference match.
-"""
+- Do NOT mention preferences for items with no preference match."""
+
+    learned_block = build_learned_history_block(user_profile)
+
+    return "\n".join(parts) + brand_rules + learned_block
 
 
 def build_refinement_block(previous_cart):
@@ -167,11 +268,14 @@ Examples:
 STEP 2 — DECIDE RESPONSE TYPE (MUTUALLY EXCLUSIVE)
 
 MODE A: "confident"
-USE WHEN: situation clear AND you can pick 4-6 items with confidence >= 0.7.
+USE WHEN: situation clear AND you can pick at least 3 RELEVANT items with
+confidence >= 0.7. Aim for 3-6 items, but include ONLY items that genuinely
+fit — a tight 3-item cart beats a padded 6-item one.
 OUTPUT: cart_title named after primary problem; clarifying_question MUST be null.
 
 MODE B: "best_guess"
-USE WHEN: message implies SOME direction but is partially underspecified.
+USE WHEN: message implies SOME direction but is partially underspecified,
+OR the catalog only partially covers the need.
 OUTPUT: tentative cart_title; 2-4 items confidence 0.5-0.7;
 situation_understood states your assumption clearly;
 clarifying_question MUST be null.
@@ -187,11 +291,21 @@ switch to clarifying_question mode.
 STEP 3 — ITEM SELECTION GUIDANCE
 
 - Pick from catalog ONLY. Never invent products or prices.
-- Power Cut: candles, LED bulb, power bank, instant food (Maggi), cold drinks.
-- Health/Fever/Cold: OTC items (Vicks, Strepsils, Crocin, ORS, honey, ginger tea, tissues).
-- Guests: paneer, naan, snacks, beverages, dessert, ice.
-- Pooja: diyas, camphor, agarbatti, kalawa, coconut, marigold, gangajal.
-- Exam Night: coffee, energy bars, sticky notes, highlighters, crackers.
+- EVERY item must directly serve the user's PRIMARY need. Before adding an
+  item, ask: "Does this solve THIS situation?" If no, leave it out.
+- If the catalog has NO good match for the core need (e.g. user asks for a
+  remote battery but no battery exists), do NOT substitute unrelated items
+  like food or drinks. Instead either return only the items that genuinely
+  fit, or use best_guess / clarifying_question. An honest small or empty cart
+  is better than a wrong one.
+- Do NOT include an item just because the user ordered it before. Past orders
+  never justify an item that doesn't fit the current situation.
+- Theme hints:
+  - Power Cut: candles, LED bulb, power bank, instant food (Maggi), cold drinks.
+  - Health/Fever/Cold: OTC items (Vicks, Strepsils, Crocin, ORS, honey, ginger tea, tissues).
+  - Guests / dinner: paneer, naan, snacks, beverages, dessert, ice, ready meals.
+  - Pooja / festival: diyas, camphor, agarbatti, kalawa, coconut, marigold, gangajal.
+  - Exam Night: coffee, energy bars, sticky notes, highlighters, crackers.
 
 STEP 4 — SAFETY NOTE RULE (STRICT)
 
@@ -246,7 +360,7 @@ Set "personalized": true on any item whose selection was influenced by the
 user's brand preferences. Set "personalization_applied": true at the cart
 level if ANY item is personalized.
 
-CATALOG (37 products available):
+CATALOG ({len(catalog)} products available):
 {catalog_block}
 """
 
@@ -330,7 +444,7 @@ OUTPUT FORMAT — STRICT JSON ONLY, no markdown, no code fences:
   ]
 }}
 
-CATALOG (37 products available):
+CATALOG ({len(catalog)} products available):
 {catalog_block}
 """
 
@@ -357,22 +471,37 @@ def parse_model_output(raw_text):
     return json.loads(cleaned)
 
 
+def _json_safe(obj):
+    """Recursively convert DynamoDB Decimals so json.dumps won't choke."""
+    if isinstance(obj, list):
+        return [_json_safe(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, Decimal):
+        return int(obj) if obj % 1 == 0 else float(obj)
+    return obj
+
+
 def apply_personalization_flags(result, user_profile):
     """
     Deterministic safety net: guarantees personalization_applied and
     personalized flags are correct, even if Nova Lite skips them.
-    Matches item names against the user's favorite_brands.
+    Matches item names against the user's favorite_brands AND against
+    products they've actually ordered before (learned history).
     """
     favorite_brands = []
+    learned_ids = set()
     if user_profile:
         favorite_brands = [
             b for b in user_profile.get("favorite_brands", {}).values() if b
         ]
+        learned_ids = set((user_profile.get("item_counts") or {}).keys())
 
     def process_cart(cart):
         any_personalized = False
         for item in cart.get("items", []):
             name = item.get("name", "").lower()
+            pid = item.get("product_id")
             matched_brand = None
             for brand in favorite_brands:
                 if brand.lower() in name:
@@ -384,6 +513,12 @@ def apply_personalization_flags(result, user_profile):
                 reason = item.get("reason", "")
                 if matched_brand.lower() not in reason.lower():
                     item["reason"] = f"{reason} {matched_brand} — your usual choice."
+            elif pid in learned_ids:
+                item["personalized"] = True
+                any_personalized = True
+                reason = item.get("reason", "")
+                if "order" not in reason.lower():
+                    item["reason"] = f"{reason} You order this often.".strip()
             else:
                 item.setdefault("personalized", False)
         cart["personalization_applied"] = any_personalized
@@ -441,8 +576,36 @@ def lambda_handler(event, context):
         elif body is None:
             body = event
 
-        user_text = body.get("user_text", "").strip()
+        action = body.get("action", "generate")
         user_id = body.get("user_id")
+
+        # ----- Record an order into learned history -----
+        if action == "record_order":
+            if not user_id:
+                return _response(400, {"error": "user_id is required to record an order"})
+            items = body.get("items") or []
+            if not items:
+                return _response(400, {"error": "items list is required"})
+            profile = record_order(user_id, items, body.get("name"))
+            return _response(200, {
+                "status": "recorded",
+                "user_id": user_id,
+                "order_count": int(profile["order_count"]),
+                "learned_items": _json_safe(profile.get("item_names", {})),
+                "item_counts": _json_safe(profile.get("item_counts", {})),
+            })
+
+        # ----- Fetch a profile (so the UI can show what's remembered) -----
+        if action == "get_profile":
+            if not user_id:
+                return _response(400, {"error": "user_id is required"})
+            profile = get_user_preferences(user_id)
+            if not profile:
+                return _response(200, {"exists": False, "user_id": user_id})
+            return _response(200, {"exists": True, **_json_safe(profile)})
+
+        # ----- Default: generate a cart -----
+        user_text = body.get("user_text", "").strip()
         previous_cart = body.get("previous_cart")
         mode = body.get("mode", "single")
         budget_inr = body.get("budget_inr")
